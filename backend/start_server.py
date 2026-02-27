@@ -1,28 +1,43 @@
-from flask import Flask
-from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
 import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from dotenv import load_dotenv
+
+from models import db
+# These blueprints must exist in your routes folder
+from routes.auth_routes import auth_bp
+from routes.photo_routes import photo_bp
 
 load_dotenv()
 
-app = Flask(__name__)
-CORS(app)
+def create_app():
+    app = Flask(__name__)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///drishyamitra.db')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'secret_key')
+    
+    db.init_app(app)
+    CORS(app) # Fixes "Network Error"
+    JWTManager(app)
+    
+    # Registering Blueprints - Activity 2.4
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(photo_bp, url_prefix='/api/photos')
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
-app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
+    @app.route('/')
+    def home():
+        return jsonify({
+            "status": "success",
+            "message": "Drishyamitra Backend is running perfectly! Connect your React frontend to use the API."
+        }), 200
 
-db = SQLAlchemy(app)
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100))
-
-@app.route("/")
-def home():
-    return "Drishyamitra Backend Running with Database"
-
-if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-    app.run(debug=True)
+        db.create_all() # Activity 2.3
+
+    return app
+
+if __name__ == '__main__':
+    app = create_app()
+    app.run(host='0.0.0.0', port=5000, debug=True)
