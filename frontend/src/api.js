@@ -1,5 +1,13 @@
 import axios from 'axios';
-const api = axios.create({ baseURL: 'http://localhost:5000/api' });
-export const uploadPhoto = (fd) => api.post('/photos/upload', fd);
-export const sendMessage = (m) => api.post('/chat/message', { message: m });
-export default api;
+
+const API = axios.create({
+    baseURL: 'http://localhost:5000/api',
+});
+
+export const uploadPhoto = (formData) => API.post('/photos/upload', formData);
+export const getIdentities = () => API.get('/photos/identities');
+export const updateIdentity = (id, name) => API.put(`/photos/identities/${id}`, { name });
+export const getDeliveryHistory = () => API.get('/photos/delivery/history');
+export const getChatResponse = (query) => API.post('/chat/ask', { query });
+
+export default API;

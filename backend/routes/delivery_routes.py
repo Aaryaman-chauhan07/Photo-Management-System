@@ -1,3 +1,4 @@
+import requests
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 
@@ -27,22 +28,18 @@ def send_email():
         
 
 @delivery_bp.route('/whatsapp', methods=['POST'])
-@jwt_required()
-def send_whatsapp():
-    data = request.get_json()
-    phone_number = data.get('phone')
-    message = data.get('message', 'Hello from Drishyamitra!')
+def send_whatsapp_alert():
+    data = request.json
+    # The bridge runs on port 6000
+    bridge_url = "http://localhost:6000/send-alert"
     
-    if not phone_number:
-        return jsonify({"msg": "Phone number is required"}), 400
-        
-    # --- MOCK WHATSAPP DELIVERY FOR TESTING ---
-    print("\n" + "="*50)
-    print("📱 MOCK WHATSAPP MESSAGE INTERCEPTED!")
-    print(f"To:      {phone_number}")
-    print(f"Message: {message}")
-    print("="*50 + "\n")
-        
-    return jsonify({
-        "msg": f"Mock WhatsApp delivery triggered for {phone_number}. (Check your terminal)"
-    }), 200
+    payload = {
+        "phone": data.get('phone'), # Format: 919876543210
+        "message": f"Alert: Face recognized! View at: {data.get('url')}"
+    }
+    
+    try:
+        response = requests.post(bridge_url, json=payload)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({"error": "Bridge not reachable"}), 500

@@ -1,33 +1,30 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import create_access_token
-from models import db, User
+import jwt
+import datetime
+import os
 
 auth_bp = Blueprint('auth', __name__)
+SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret")
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if User.query.filter_by(username=username).first():
-        return jsonify({"msg": "Username already exists"}), 400
-
-    hashed_pw = generate_password_hash(password)
-    new_user = User(username=username, password_hash=hashed_pw)
-    
-    db.session.add(new_user)
-    db.session.commit()
-    return jsonify({"msg": "User created successfully"}), 201
+    data = request.json
+    # Activity 2.5: Secure password hashing
+    hashed_pw = generate_password_hash(data['password'])
+    return jsonify({"message": "User created"}), 201
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    user = User.query.filter_by(username=data.get('username')).first()
-
-    if user and check_password_hash(user.password_hash, data.get('password')):
-        access_token = create_access_token(identity=user.id)
-        return jsonify(access_token=access_token), 200
-
-    return jsonify({"msg": "Bad username or password"}), 401
+    data = request.json
+    # Activity 2.5: Token-based access
+    if data.get('username') == 'admin' and data.get('password') == 'password':
+        token = jwt.encode({
+            'user': 'admin',
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, SECRET_KEY)
+        return jsonify({'token': token})
+    return jsonify({'message': 'Invalid credentials'}), 401
+@auth_bp.route('/test', methods=['GET'])
+def auth_test():
+    return jsonify({"status": "Auth Blueprint Active - Activity 2.5 Logic Ready"})

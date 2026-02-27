@@ -1,38 +1,48 @@
-from flask import Blueprint, request, jsonify, send_from_directory
-from models import db, Photo, Face, Person
-from ai_utils import extract_faces_from_image
-import os, json
+from flask import Blueprint, request, jsonify
+from deepface import DeepFace
+from models import db, Photo, Face, Identity
+import os
 
 photo_bp = Blueprint('photos', __name__)
-UPLOAD_FOLDER = 'uploads'
-
-@photo_bp.route('/list', methods=['GET'])
-def get_photos():
-    """This stops the 404 error on the gallery."""
-    photos = Photo.query.all()
-    return jsonify([{"id": p.id, "url": f"/api/photos/view/{p.filename}", "people": [f.person.name for f in p.faces if f.person]} for p in photos]), 200
 
 @photo_bp.route('/upload', methods=['POST'])
-def upload_photo():
-    file = request.files.get('file')
-    if not file: return jsonify({"msg": "No file"}), 400
+def upload_and_recognize():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
     
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-        
-    path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(path)
-
-    new_photo = Photo(filename=file.filename, filepath=path)
+    file = request.files['file']
+    # Save the photo to your local upload folder
+    upload_path = os.path.join('uploads', file.filename)
+    file.save(upload_path)
+    
+    # Create the Photo record in the database
+    new_photo = Photo(url=f"/uploads/{file.filename}")
     db.session.add(new_photo)
     db.session.commit()
 
-    faces = extract_faces_from_image(path)
-    for f in faces:
-        db.session.add(Face(photo_id=new_photo.id, bounding_box=json.dumps(f.get('facial_area', {}))))
-    db.session.commit()
-    return jsonify({"msg": "Success", "faces": len(faces)}), 201
+    try:
+        # Activity 3.1: DeepFace Face Detection
+        results = DeepFace.represent(img_path=upload_path, model_name="Facenet512", enforce_detection=False)
+        
+        for face_data in results:
+            # Create a new Face entry linked to the photo
+            new_face = Face(photo_id=new_photo.id, embedding=str(face_data['embedding']))
+            db.session.add(new_face)
+        
+        db.session.commit()
+        return jsonify({"message": "Photo processed", "photo_id": new_photo.id}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@photo_bp.route('/list', methods=['GET']) # This makes it /api/photos/list
+def get_photos():
+    photos = Photo.query.all()
+    return jsonify([p.to_dict() for p in photos])
 
-@photo_bp.route('/view/<filename>')
-def view_photo(filename):
-    return send_from_directory(os.path.abspath(UPLOAD_FOLDER), filename)
+
+photo_bp = Blueprint('photos', __name__)
+
+@photo_bp.route('/list', methods=['GET']) # MUST be GET for browser check
+def list_photos():
+    photos = Photo.query.all()
+    # Activity 2.1: Returning structured JSON data
+    return jsonify([{"id": p.id, "url": p.url} for p in photos])
