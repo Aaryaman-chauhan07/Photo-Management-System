@@ -3,3 +3,5 @@ __pycache__/
 *.db
 data/photos/
 node_modules/
+.pytest_cache/
+test_reports/
