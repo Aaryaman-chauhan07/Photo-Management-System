@@ -1,11 +1,5 @@
-@(
-# WhatsApp Session Data (DO NOT PUSH THIS)
-whatsapp-bridge/.wwebjs_auth/
-whatsapp-bridge/node_modules/
-
-# Database and Environment
-backend/drishyamitra.db
-backend/__pycache__/
-*.pyc
 .env
-)
+__pycache__/
+*.db
+data/photos/
+node_modules/
