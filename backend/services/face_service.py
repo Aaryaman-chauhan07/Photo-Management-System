@@ -1,60 +1,65 @@
 import os
+import numpy as np
+import json
 from deepface import DeepFace
-from scipy.spatial.distance import cosine
-from models import db, Face, Person
+from models import db, Face, Person, Photo
 
-# Facenet512 requires a tighter threshold than VGG-Face (usually around 0.30)
-MATCH_THRESHOLD = 0.30 
+# Advanced Configuration
+MODEL_NAME = "Facenet512" 
+DETECTOR_BACKEND = "retinaface"
+ALIGN_BACKEND = "mtcnn"
 
 def detect_and_recognize(photo_id, image_path):
-    """
-    Activity 3.1: Uses MTCNN to detect faces and Facenet512 to generate embeddings.
-    """
+    print(f"--- Processing Photo ID: {photo_id} ---")
     try:
-        print(f"[*] AI starting detection on: {image_path}")
-        
-        # Upgraded to Facenet512 and MTCNN as per Milestone 3 requirements
         results = DeepFace.represent(
-            img_path=image_path, 
-            model_name="Facenet512", 
-            detector_backend="mtcnn", 
-            enforce_detection=True # Forces it to actually look for a face
+            img_path=image_path,
+            model_name="Facenet512",
+            detector_backend="retinaface",
+            align=True,
+            enforce_detection=False
         )
-        
-        identity_names = []
-        
+
+        print(f"AI found {len(results)} faces.")
+
         for res in results:
             embedding = res["embedding"]
-            match_found = False
+            matched_person_id = find_match(embedding)
+            print(f"Match found: {matched_person_id}") # This will tell us if it recognized someone
             
-            # Compare against all enrolled persons in the database
-            known_faces = Face.query.filter(Face.person_id.isnot(None)).all()
-            for known in known_faces:
-                # Using Cosine Similarity to find the closest match
-                if cosine(embedding, known.embedding) < MATCH_THRESHOLD:
-                    person = Person.query.get(known.person_id)
-                    identity_names.append(person.name)
-                    
-                    # Link this new face to the identified person
-                    new_face = Face(embedding=embedding, photo_id=photo_id, person_id=person.id)
-                    db.session.add(new_face)
-                    match_found = True
-                    break
-            
-            if not match_found:
-                # Face detected, but not recognized in the database
-                new_face = Face(embedding=embedding, photo_id=photo_id, person_id=None)
-                db.session.add(new_face)
-                identity_names.append("Unknown Face")
-
+            new_face = Face(
+                photo_id=photo_id,
+                embedding=json.dumps(embedding), 
+                person_id=matched_person_id
+            )
+            db.session.add(new_face)
+        
         db.session.commit()
-        final_result = ", ".join(identity_names)
-        print(f"[+] AI Detection Success: {final_result}")
-        return final_result
-
-    except ValueError:
-        print("[-] AI Error: No face detected in the image.")
-        return "No Face Detected"
+        return f"Detected {len(results)} face(s)"
     except Exception as e:
-        print(f"[-] AI Critical Error: {str(e)}")
-        return "Detection Error"
+        print(f"CRITICAL ERROR: {e}")
+        return "Recognition failed"
+
+def find_match(new_embedding, threshold=0.4):
+    """
+    Compares vectors using Cosine Similarity (1 - Cosine Distance).
+    """
+    all_faces = Face.query.filter(Face.person_id != None).all()
+    
+    best_match = None
+    min_dist = 1.0 
+
+    for face in all_faces:
+        if not face.embedding: continue
+        
+        stored_vec = np.array(json.loads(face.embedding))
+        new_vec = np.array(new_embedding)
+        
+        # Calculate Cosine Distance
+        dist = 1 - (np.dot(new_vec, stored_vec) / (np.linalg.norm(new_vec) * np.linalg.norm(stored_vec)))
+        
+        if dist < threshold and dist < min_dist:
+            min_dist = dist
+            best_match = face.person_id
+            
+    return best_match
