@@ -1,3 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-white antialiased;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+  }
+}
+
+/* Custom Scrollbar for the AI Assistant and Logs */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-800 rounded-full hover:bg-gray-700 transition;
+}
+
+/* Activity 4.1: Glassmorphism effect for Sidebar */
+.sidebar-glass {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(10px);
+}

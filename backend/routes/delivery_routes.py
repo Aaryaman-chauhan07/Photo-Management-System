@@ -2,6 +2,8 @@ import requests
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 
+from backend.models import DeliveryLog
+
 delivery_bp = Blueprint('delivery', __name__)
 
 @delivery_bp.route('/email', methods=['POST'])
@@ -43,3 +45,8 @@ def send_whatsapp_alert():
         return jsonify(response.json()), response.status_code
     except Exception as e:
         return jsonify({"error": "Bridge not reachable"}), 500
+# Activity 3.3/3.4: Fetch history from Database
+@delivery_bp.route('/history', methods=['GET'])
+def get_history():
+    logs = DeliveryLog.query.order_by(DeliveryLog.timestamp.desc()).all()
+    return jsonify([log.to_dict() for log in logs])
