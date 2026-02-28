@@ -30,3 +30,17 @@
   background: rgba(17, 24, 39, 0.7);
   backdrop-filter: blur(10px);
 }
+/* Rounded card style to match the Dashboard reference */
+.dashboard-card {
+  @apply bg-white rounded-[2.5rem] border border-slate-100 shadow-sm transition-all;
+}
+
+/* Profile Icon shadow to match User1 icon */
+.profile-shadow {
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2);
+}
+
+/* Hide scrollbar for the Chat Assistant */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}

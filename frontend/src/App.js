@@ -1,43 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  Camera, LayoutDashboard, MessageSquare, Users, 
-  History, Upload, Loader2, LogOut, Send, UserCheck, ShieldAlert, Mail 
+  Camera, Upload, Image, Edit, MessageSquare, Heart, 
+  Share2, Settings, LogOut, ArrowRight, Send, Mail, Lock, 
+  User, Eye, Search, Bell, History, Loader2, UserCheck, ShieldAlert 
 } from 'lucide-react';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('gallery');
+  // 1. Navigation & State Management
+  const [currentPage, setCurrentPage] = useState('home'); // home, login, signup, app
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [loading, setLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+
+  // 2. Data State
   const [photos, setPhotos] = useState([]);
   const [identities, setIdentities] = useState([]);
   const [deliveryLogs, setDeliveryLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [messages, setMessages] = useState([{ role: 'assistant', content: 'Hello! I am your Drishyamitra assistant. Ask me anything about your detections.' }]);
+  const [messages, setMessages] = useState([{ role: 'assistant', content: 'Hello! I am your Intelligent Photo Assistant.' }]);
   const [input, setInput] = useState('');
 
   const API_URL = "http://localhost:5000/api";
 
-  // Activity 4.5 & 5.3: Syncing all data based on Active Tab
+  // 3. Fetch Logic for Backend Integration
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        if (activeTab === 'gallery') {
-          const res = await axios.get(`${API_URL}/photos/list`);
-          setPhotos(res.data);
-        } else if (activeTab === 'people') {
-          const res = await axios.get(`${API_URL}/photos/identities`);
-          setIdentities(res.data);
-        } else if (activeTab === 'logs') {
-          const res = await axios.get(`${API_URL}/delivery/history`);
-          setDeliveryLogs(res.data);
-        }
-      } catch (err) { 
-        console.error("Backend offline - Check port 5000"); 
-      }
-    };
-    fetchData();
-  }, [activeTab]);
+    if (currentPage === 'app') {
+      const fetchData = async () => {
+        try {
+          const [pRes, iRes, lRes] = await Promise.all([
+            axios.get(`${API_URL}/photos/list`),
+            axios.get(`${API_URL}/photos/identities`),
+            axios.get(`${API_URL}/delivery/history`)
+          ]);
+          setPhotos(pRes.data);
+          setIdentities(iRes.data);
+          setDeliveryLogs(lRes.data);
+        } catch (err) { console.error("Backend offline - Check port 5000"); }
+      };
+      fetchData();
+    }
+  }, [currentPage, activeTab]);
 
+  // 4. Action Handlers
   const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -46,7 +50,9 @@ function App() {
     setLoading(true);
     try {
       await axios.post(`${API_URL}/photos/upload`, fd);
-      setActiveTab('gallery'); // Refresh gallery
+      const res = await axios.get(`${API_URL}/photos/list`);
+      setPhotos(res.data);
+      setActiveTab('gallery');
     } catch (err) { alert("Detection Failed."); }
     finally { setLoading(false); }
   };
@@ -60,153 +66,243 @@ function App() {
     try {
       const res = await axios.post(`${API_URL}/chat/ask`, { query: input });
       setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "AI brain disconnected." }]);
-    }
+    } catch (err) { setMessages(prev => [...prev, { role: 'assistant', content: "AI brain disconnected." }]); }
   };
 
-  return (
-    <div className="flex h-screen bg-gray-950 text-white font-sans overflow-hidden">
-      {/* Sidebar - Activity 4.1 */}
-      <nav className="w-64 bg-gray-900 border-r border-gray-800 p-6 flex flex-col justify-between">
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 mb-10 text-blue-500">
-            <Camera size={32} />
-            <h1 className="text-xl font-black text-white tracking-tighter">DRISHYAMITRA</h1>
-          </div>
-          <button onClick={() => setActiveTab('gallery')} className={`flex items-center gap-3 p-3 w-full rounded-xl transition ${activeTab === 'gallery' ? 'bg-blue-600 shadow-lg shadow-blue-900/20' : 'text-gray-400 hover:bg-gray-800'}`}><LayoutDashboard size={20}/> Dashboard</button>
-          <button onClick={() => setActiveTab('people')} className={`flex items-center gap-3 p-3 w-full rounded-xl transition ${activeTab === 'people' ? 'bg-blue-600' : 'text-gray-400 hover:bg-gray-800'}`}><Users size={20}/> Identity Center</button>
-          <button onClick={() => setActiveTab('logs')} className={`flex items-center gap-3 p-3 w-full rounded-xl transition ${activeTab === 'logs' ? 'bg-blue-600' : 'text-gray-400 hover:bg-gray-800'}`}><History size={20}/> Delivery Logs</button>
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setCurrentPage('home');
+    setActiveTab('dashboard');
+  };
+
+  // --- VIEW 1: HOME PAGE ---
+  if (currentPage === 'home') return (
+    <div className="min-h-screen bg-gradient-to-br from-[#1d4ed8] via-[#3b82f6] to-[#1e40af] flex flex-col items-center justify-center text-white px-6 text-center animate-in fade-in duration-700">
+      <div className="bg-white/20 p-6 rounded-2xl backdrop-blur-md mb-8 border border-white/10 shadow-xl">
+        <Camera size={48} />
+      </div>
+      <h1 className="text-7xl font-bold tracking-tight mb-4">Drishyamitra</h1>
+      <p className="text-xl font-medium text-blue-100 mb-8 opacity-90">Professional Photography Platform</p>
+      <p className="max-w-2xl text-lg text-blue-50/70 leading-relaxed mb-12">
+        Transform your photography workflow with AI-powered tools, smart organization, and seamless sharing across multiple platforms.
+      </p>
+      <div className="flex gap-6">
+        <button onClick={() => setCurrentPage('signup')} className="bg-white text-blue-600 px-10 py-4 rounded-xl font-bold flex items-center gap-2 hover:shadow-2xl transition-all active:scale-95">
+          Get Started Free <ArrowRight size={20} />
+        </button>
+        <button onClick={() => setCurrentPage('login')} className="bg-white/10 border border-white/20 px-10 py-4 rounded-xl font-bold hover:bg-white/20 transition-all">Login</button>
+      </div>
+    </div>
+  );
+
+  // --- VIEW 2: AUTH PAGES ---
+  if (currentPage === 'login' || currentPage === 'signup') return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 animate-in zoom-in-95">
+        <div className="text-center mb-10">
+          <h2 className="text-4xl font-bold text-slate-800 mb-2">Drishyamitra</h2>
+          <p className="text-slate-400 font-medium">
+            {currentPage === 'signup' ? 'Create your account' : 'Your Intelligent Photo Assistant'}
+          </p>
         </div>
-        <button className="flex items-center gap-3 p-3 text-red-500 hover:bg-red-950/30 rounded-xl transition mt-auto"><LogOut size={20}/> Logout</button>
-      </nav>
-
-      {/* Main UI Area */}
-      <main className="flex-1 p-10 overflow-y-auto relative">
-        
-        {/* Activity 4.2: Dashboard & Photo Upload */}
-        {activeTab === 'gallery' && (
-          <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-            <h2 className="text-3xl font-bold mb-8 text-gray-100">System Dashboard</h2>
-            <div className="border-2 border-dashed border-gray-800 rounded-3xl p-16 text-center bg-gray-900/40 hover:border-blue-500 transition-all cursor-pointer group">
-              <input type="file" id="u" className="hidden" onChange={handleUpload} />
-              <label htmlFor="u" className="cursor-pointer flex flex-col items-center gap-4">
-                {loading ? <Loader2 className="animate-spin text-blue-500" size={48}/> : <Upload size={48} className="text-gray-400 group-hover:text-blue-500 transition"/>}
-                <p className="text-gray-300 font-medium tracking-wide">{loading ? 'AI analyzing faces...' : 'Upload Image to Start Detection'}</p>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-12">
-              {photos.map(p => (
-                <div key={p.id} className="group bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
-                  <img src={`http://localhost:5000${p.url}`} className="h-56 w-full object-cover grayscale-[30%] group-hover:grayscale-0 transition duration-500" alt="face" />
-                  <div className="p-5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2.5 h-2.5 rounded-full ${p.identity === 'Unknown' ? 'bg-amber-500 shadow-[0_0_10px_#f59e0b]' : 'bg-green-500 shadow-[0_0_10px_#22c55e]'}`} />
-                      <span className="text-xs font-black text-gray-100 uppercase tracking-widest">{p.identity || 'Unknown'}</span>
-                    </div>
-                    <span className="text-[10px] text-gray-500">{new Date(p.timestamp).toLocaleTimeString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+        <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); setCurrentPage('app'); }}>
+          <div className="relative">
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Email Address</label>
+            <Mail className="absolute left-4 top-[38px] text-slate-300" size={18}/><input type="email" placeholder="you@example.com" className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-blue-500" required />
           </div>
-        )}
-
-        {/* Activity 4.4: Identity Center */}
-        {activeTab === 'people' && (
-          <div className="max-w-6xl mx-auto animate-in slide-in-from-right-4 duration-500">
-            <h2 className="text-3xl font-bold mb-8">Identity Management</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {identities.map((person, idx) => (
-                <div key={idx} className="bg-gray-900 border border-gray-800 p-6 rounded-3xl flex items-center gap-5 hover:bg-gray-800/50 transition">
-                  <div className="w-14 h-14 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center border border-blue-500/20">
-                    <UserCheck size={28} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-white">{person.name}</h3>
-                    <p className="text-xs text-gray-500 font-medium">Verified in {person.count} detections</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Activity 3.3/3.4: Delivery Logs View */}
-        {activeTab === 'logs' && (
-          <div className="max-w-6xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-3xl font-bold mb-8">Alert Delivery History</h2>
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden shadow-2xl">
-              <table className="w-full text-left">
-                <thead className="bg-gray-800/50 text-gray-400 text-[10px] uppercase tracking-widest font-bold">
-                  <tr>
-                    <th className="p-6">Recipient Contact</th>
-                    <th className="p-6">Method</th>
-                    <th className="p-6">Status</th>
-                    <th className="p-6">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {deliveryLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-blue-500/5 transition">
-                      <td className="p-6 font-semibold text-gray-200">{log.recipient}</td>
-                      <td className="p-6">
-                        <span className="flex items-center gap-2 text-xs">
-                          {log.type === 'WhatsApp' ? <MessageSquare size={14} className="text-green-500"/> : <Mail size={14} className="text-blue-500"/>}
-                          {log.type}
-                        </span>
-                      </td>
-                      <td className="p-6">
-                        <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${log.status === 'Sent' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                          {log.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="p-6 text-gray-500 text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Activity 4.3: AI Assistant */}
-        <div className="fixed bottom-10 right-10 flex flex-col items-end gap-4 z-50">
-          {chatOpen && (
-            <div className="w-80 h-[500px] bg-gray-900 border border-gray-800 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-              <div className="p-4 bg-blue-600 font-bold flex justify-between items-center">
-                <div className="flex items-center gap-2"><MessageSquare size={18}/> <span>AI Security Assistant</span></div>
-                <button onClick={() => setChatOpen(false)} className="hover:bg-blue-700 rounded-lg p-1">×</button>
-              </div>
-              <div className="flex-1 p-4 overflow-y-auto space-y-4 text-xs scrollbar-hide">
-                {messages.map((m, i) => (
-                  <div key={i} className={`p-3 rounded-2xl max-w-[85%] leading-relaxed ${m.role === 'user' ? 'bg-blue-600 text-white ml-auto rounded-tr-none' : 'bg-gray-800 text-gray-300 rounded-tl-none border border-gray-700'}`}>
-                    {m.content}
-                  </div>
-                ))}
-              </div>
-              <form onSubmit={handleChat} className="p-4 bg-gray-900 border-t border-gray-800 flex gap-2">
-                <input 
-                  value={input} 
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about security logs..." 
-                  className="flex-1 bg-gray-800 border-none rounded-xl px-4 py-2 text-xs focus:ring-1 focus:ring-blue-500 text-white"
-                />
-                <button type="submit" className="p-2 bg-blue-600 rounded-xl hover:bg-blue-500 transition"><Send size={18}/></button>
-              </form>
+          {currentPage === 'signup' && (
+            <div className="relative">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Username</label>
+              <User className="absolute left-4 top-[38px] text-slate-300" size={18}/><input placeholder="username" className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-blue-500" required />
             </div>
           )}
-          <button 
-            onClick={() => setChatOpen(!chatOpen)}
-            className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 hover:rotate-12 transition-all active:scale-95"
-          >
-            <MessageSquare size={28} />
+          <div className="relative">
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Password</label>
+            <Lock className="absolute left-4 top-[38px] text-slate-300" size={18}/><input type="password" placeholder="••••••••" className="w-full pl-12 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-blue-500" required /><Eye className="absolute right-4 top-[38px] text-slate-300 cursor-pointer" size={18}/>
+          </div>
+          <button type="submit" className="w-full bg-[#475569] text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all shadow-lg active:scale-95">
+            {currentPage === 'signup' ? 'Sign Up' : 'Login'}
           </button>
+          <p className="text-center text-sm text-slate-500 mt-8">
+            {currentPage === 'signup' ? 'Already have an account? ' : "Don't have an account? "}
+            <span onClick={() => setCurrentPage(currentPage === 'signup' ? 'login' : 'signup')} className="text-slate-800 font-bold cursor-pointer hover:underline">
+              {currentPage === 'signup' ? 'Sign in' : 'Sign up'}
+            </span>
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+
+  // --- VIEW 3: MAIN APP (DASHBOARD) ---
+  return (
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans">
+      {/* Horizontal Navbar */}
+      <nav className="bg-white border-b border-slate-100 px-8 py-4 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2 text-blue-600 font-bold cursor-pointer" onClick={() => setCurrentPage('home')}>
+            <div className="bg-blue-600 p-1.5 rounded-lg text-white"><Camera size={20}/></div>
+            <span className="text-xl tracking-tighter text-slate-900 uppercase">Drishyamitra</span>
+          </div>
+          <div className="hidden lg:flex items-center gap-8 text-sm font-bold text-slate-400 uppercase tracking-widest">
+            <button onClick={() => setCurrentPage('home')} className="hover:text-blue-600">Home</button>
+            <button onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg' : 'hover:text-blue-600'}>Dashboard</button>
+            <button onClick={() => setActiveTab('gallery')} className={activeTab === 'gallery' ? 'text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg' : 'hover:text-blue-600'}>Gallery</button>
+            <button onClick={() => setActiveTab('people')} className={activeTab === 'people' ? 'text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg' : 'hover:text-blue-600'}>People</button>
+            <button onClick={() => setActiveTab('logs')} className={activeTab === 'logs' ? 'text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg' : 'hover:text-blue-600'}>Logs</button>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+              <div className="w-8 h-8 bg-blue-600 rounded-full text-white flex items-center justify-center text-[10px] font-bold shadow-md">U1</div>
+              <span className="text-slate-900 font-bold text-xs">User1</span>
+            </div>
+            <LogOut size={20} className="text-slate-300 cursor-pointer hover:text-red-500" onClick={handleLogout} />
+          </div>
         </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto p-10 animate-in fade-in duration-500">
+        {activeTab === 'dashboard' && (
+          <>
+            {/* Welcome Banner */}
+            <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 shadow-sm mb-10 flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="text-center md:text-left">
+                <h2 className="text-5xl font-black text-slate-900 mb-2 tracking-tight">Welcome back, User1!</h2>
+                <p className="text-slate-500 font-medium text-xl">Ready to capture and create amazing memories?</p>
+                <p className="text-slate-400 text-xs mt-4">📅 Monday, November 3, 2025</p>
+              </div>
+              <div className="bg-blue-600 text-white px-8 py-5 rounded-2xl font-bold flex items-center gap-4 shadow-xl shadow-blue-500/20">
+                Portfolio Status <span className="bg-white/20 px-3 py-1.5 rounded-xl text-sm">{photos.length} Photos</span>
+              </div>
+            </div>
+
+            {/* Quick Action Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              <label className="bg-white p-10 rounded-[2.5rem] shadow-sm flex flex-col items-center text-center group cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all">
+                <input type="file" className="hidden" onChange={handleUpload} />
+                <div className="bg-blue-600/5 text-blue-600 p-5 rounded-2xl mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                  {loading ? <Loader2 className="animate-spin"/> : <Upload />}
+                </div>
+                <h3 className="font-bold text-slate-900 text-lg">Upload</h3>
+                <p className="text-[10px] text-slate-400 font-black tracking-widest uppercase mt-1">Add new photos</p>
+              </label>
+              <ActionCard icon={<Image />} label="Gallery" sub="Browse collection" onClick={() => setActiveTab('gallery')} />
+              <ActionCard icon={<Edit />} label="Editor" sub="AI enhancement" />
+              <ActionCard icon={<MessageSquare />} label="AI Chat" sub="Get assistance" onClick={() => setChatOpen(true)} />
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatCard label="Total Photos" value={photos.length} icon={<Image size={24}/>} />
+              <StatCard label="Identities" value={identities.length} icon={<UserCheck size={24}/>} />
+              <StatCard label="Alerts Sent" value={deliveryLogs.length} icon={<Bell size={24}/>} />
+              <StatCard label="Favorites" value="8" icon={<Heart size={24}/>} />
+            </div>
+          </>
+        )}
+
+        {/* Gallery View (Activity 4.2) */}
+        {activeTab === 'gallery' && (
+          <div className="animate-in slide-in-from-right-4 duration-500 space-y-8">
+            <h2 className="text-3xl font-black text-slate-900">My Gallery</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+              {photos.map(p => (
+                <div key={p.id} className="bg-white p-3 rounded-[2rem] shadow-sm border border-slate-100 group">
+                  <div className="aspect-square bg-slate-50 rounded-2xl overflow-hidden mb-3 relative">
+                    <img src={`${API_URL}/../../${p.url}`} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" alt="p"/>
+                    <div className="absolute top-2 left-2 bg-black/50 text-white text-[8px] px-2 py-1 rounded-md backdrop-blur-md">
+                      {p.identity || 'Unknown'}
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[9px] font-bold text-slate-400">2.43 MB</span>
+                    <button className="text-[9px] font-black text-red-500 uppercase border border-red-50 px-2 py-1 rounded-lg hover:bg-red-50">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Identity Center View (Activity 4.4) */}
+        {activeTab === 'people' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-right-4">
+            {identities.map((p, idx) => (
+              <div key={idx} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-5 hover:bg-blue-50/30 transition">
+                <div className="w-14 h-14 bg-blue-600 text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg">{p.name[0]}</div>
+                <div>
+                  <h4 className="font-black text-slate-900 text-lg">{p.name}</h4>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{p.count} Verified Detections</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Delivery Logs View (Activity 3.3) */}
+        {activeTab === 'logs' && (
+          <div className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm animate-in slide-in-from-bottom-4">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest border-b border-slate-100">
+                <tr><th className="p-8">Recipient</th><th className="p-8">Method</th><th className="p-8">Status</th><th className="p-8">Time</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {deliveryLogs.map(log => (
+                  <tr key={log.id} className="text-sm hover:bg-slate-50 transition">
+                    <td className="p-8 font-bold text-slate-900">{log.recipient}</td>
+                    <td className="p-8"><span className="flex items-center gap-2">{log.type === 'WhatsApp' ? <MessageSquare size={14} className="text-green-500"/> : <Mail size={14} className="text-blue-500"/>}{log.type}</span></td>
+                    <td className="p-8"><span className="bg-green-100 text-green-600 px-3 py-1 rounded-full text-[10px] font-black">{log.status.toUpperCase()}</span></td>
+                    <td className="p-8 text-slate-400 text-xs">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </main>
+
+      {/* Floating AI Chat Assistant (Activity 4.3) */}
+      <div className="fixed bottom-10 right-10 z-50">
+        {chatOpen && (
+          <div className="w-80 h-[500px] bg-white border border-slate-200 rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 border border-slate-100">
+            <div className="p-6 bg-[#f97316] text-white flex justify-between items-center shadow-lg">
+              <div className="flex items-center gap-3"><MessageSquare size={24}/><span className="text-xl font-black tracking-tighter">AI Assistant</span></div>
+              <button onClick={() => setChatOpen(false)} className="text-2xl hover:scale-125 transition">×</button>
+            </div>
+            <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-orange-50/20 scrollbar-hide text-xs leading-relaxed">
+              {messages.map((m, i) => (
+                <div key={i} className={`p-4 rounded-[1.5rem] max-w-[90%] font-medium shadow-sm ${m.role === 'user' ? 'bg-[#f97316] text-white ml-auto rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
+                  {m.content}
+                </div>
+              ))}
+            </div>
+            <form onSubmit={handleChat} className="p-5 bg-white border-t border-slate-100 flex gap-2">
+              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message..." className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-xs outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"/>
+              <button type="submit" className="p-3 bg-[#f97316] text-white rounded-2xl shadow-lg shadow-orange-500/30 hover:scale-110 transition active:scale-95"><Send size={18}/></button>
+            </form>
+          </div>
+        )}
+        <button onClick={() => setChatOpen(!chatOpen)} className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-[0_10px_30px_rgba(37,99,235,0.4)] hover:scale-110 hover:rotate-12 transition-all active:scale-95"><MessageSquare size={30}/></button>
+      </div>
     </div>
   );
 }
+
+// --- SHARED UI COMPONENTS ---
+const ActionCard = ({ icon, label, sub, onClick }) => (
+  <div onClick={onClick} className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all">
+    <div className="bg-blue-600/5 text-blue-600 p-5 rounded-2xl mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">{icon}</div>
+    <h3 className="font-bold text-slate-900 text-lg mb-1">{label}</h3>
+    <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest leading-none">{sub}</p>
+  </div>
+);
+
+const StatCard = ({ label, value, icon }) => (
+  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm text-center flex flex-col items-center group hover:bg-blue-50/20 transition-all">
+    <div className="text-blue-600/30 mb-5 group-hover:text-blue-600 transition-all">{icon}</div>
+    <div className="text-4xl font-black text-slate-900 mb-1">{value}</div>
+    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</div>
+  </div>
+);
 
 export default App;
