@@ -1,147 +1,193 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from flask import Flask, request, jsonify, send_from_directory
-from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
-from datetime import datetime
+from werkzeug.utils import secure_filename
 
-# Initialize Flask App
-app = Flask(__name__)
-CORS(app)  # Activity 4.5: Enables handshake with React
+# Models and Services
+from models import db, User, Photo, Face, Person, DeliveryHistory
+from services.face_service import detect_and_recognize
+from services.chat_service import process_chat_query
+from services.gmail_service import send_photo_via_gmail
 
-# --- 1. CONFIGURATION (Fixes image_8de581.png) ---
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'drishyamitra.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = 'ibm-drishyamitra-secret-2026'
-app.config['UPLOAD_FOLDER'] = 'uploads'
+def create_app():
+    app = Flask(__name__)
+    CORS(app)
+    
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'drishyamitra.db')
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'ibm-secret-2026')
+    app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'data/photos')
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    
+    db.init_app(app)
+    bcrypt = Bcrypt(app)
+    jwt = JWTManager(app)
 
-# Create upload folder if it doesn't exist
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+    @app.route('/data/photos/<path:filename>')
+    def serve_photos(filename):
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# Initialize Extensions (Fixes image_8de99d.png)
-db = SQLAlchemy(app)
-bcrypt = Bcrypt(app)
-jwt = JWTManager(app)
-
-# --- 2. DATABASE MODELS ---
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-
-class Photo(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    url = db.Column(db.String(200), nullable=False)
-    identity = db.Column(db.String(100), default='Unknown')
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-class DeliveryLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    recipient = db.Column(db.String(100))
-    type = db.Column(db.String(50)) # WhatsApp or Email
-    status = db.Column(db.String(50)) # Sent or Failed
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-# Create Database tables
-with app.app_context():
-    db.create_all()
-
-# --- 3. AUTHENTICATION ROUTES (Activity 2.5) ---
-
-# --- 4. ROUTES ---
-@app.route('/api/auth/signup', methods=['POST'])
-def signup():
-    data = request.json
-    try:
-        # 1. Explicitly check if the email is taken
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({"message": "That email is already registered."}), 400
-            
-        # 2. Explicitly check if the username is taken
-        if User.query.filter_by(username=data.get('username')).first():
-            return jsonify({"message": "That username is already taken. Try another."}), 400
-
-        # 3. If both are new, create the user
+    @app.route('/api/auth/signup', methods=['POST'])
+    def signup():
+        data = request.json
         hashed_pw = bcrypt.generate_password_hash(data['password']).decode('utf-8')
         new_user = User(username=data.get('username'), email=data['email'], password=hashed_pw)
         db.session.add(new_user)
         db.session.commit()
         return jsonify({"message": "Success"}), 201
 
-    except Exception as e:
-        db.session.rollback() # Protect the database from locking up
-        return jsonify({"message": f"Server Error: {str(e)}"}), 500
-# Activity 2.5: Login Route
-@app.route('/api/auth/login', methods=['POST'])
-def login():
-    data = request.json
-    user = User.query.filter_by(email=data['email']).first()
-    if user and bcrypt.check_password_hash(user.password, data['password']):
-        token = create_access_token(identity=user.id)
-        return jsonify({"token": token, "username": user.username})
-    return jsonify({"message": "Invalid credentials"}), 401
+    @app.route('/api/auth/login', methods=['POST'])
+    def login():
+        data = request.json
+        user = User.query.filter_by(email=data.get('email')).first()
+        if user and bcrypt.check_password_hash(user.password, data.get('password')):
+            token = create_access_token(identity=str(user.id))
+            return jsonify({"token": token, "username": user.username}), 200
+        return jsonify({"message": "Invalid Credentials"}), 401
 
-# --- 4. PHOTO & DETECTION ROUTES ---
+    @app.route('/api/photos/upload', methods=['POST'])
+    @jwt_required()
+    def upload():
+        user_id = int(get_jwt_identity())
+        file = request.files.get('file')
+        if not file:
+            return jsonify({"message": "No file uploaded"}), 400
+            
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
 
-@app.route('/api/photos/upload', methods=['POST'])
-def upload_photo():
-    if 'file' not in request.files:
-        return jsonify({"message": "No file part"}), 400
-    
-    file = request.files['file']
-    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
+        new_photo = Photo(url=f"data/photos/{filename}", user_id=user_id)
+        db.session.add(new_photo)
+        db.session.flush()
 
-    # Activity 3.1: Trigger DeepFace Processing (Mocked for speed)
-    new_photo = Photo(url=f"/uploads/{filename}", identity="Pramodh") 
-    db.session.add(new_photo)
-    db.session.commit()
-    
-    return jsonify({"message": "File uploaded and analyzed", "url": new_photo.url}), 201
+        detection_result = detect_and_recognize(new_photo.id, filepath)
 
-@app.route('/api/photos/list', methods=['GET'])
-def list_photos():
-    photos = Photo.query.order_by(Photo.timestamp.desc()).all()
-    return jsonify([{
-        "id": p.id, 
-        "url": p.url, 
-        "identity": p.identity, 
-        "timestamp": p.timestamp.isoformat()
-    } for p in photos])
+        log = DeliveryHistory(activity_type=f"Recognition: {detection_result}", photo_id=new_photo.id)
+        db.session.add(log)
+        db.session.commit()
+        
+        return jsonify({"message": detection_result}), 201
 
-@app.route('/api/photos/identities', methods=['GET'])
-def get_identities():
-    # Activity 4.4: Identity Center Logic
-    results = db.session.query(Photo.identity, db.func.count(Photo.id)).group_by(Photo.identity).all()
-    return jsonify([{"name": r[0], "count": r[1]} for r in results])
+    @app.route('/api/photos/list', methods=['GET'])
+    @jwt_required()
+    def list_photos():
+        user_id = int(get_jwt_identity())
+        photos = Photo.query.filter_by(user_id=user_id).order_by(Photo.timestamp.desc()).all()
+        results = []
+        for p in photos:
+            identity = "Unknown"
+            face_rec = Face.query.filter_by(photo_id=p.id).first()
+            if face_rec and face_rec.person_identity:
+                identity = face_rec.person_identity.name
+            elif face_rec and not face_rec.person_identity:
+                identity = "Unknown Face"
+            elif not face_rec:
+                identity = "No Face Detected"
+                
+            results.append({"id": p.id, "url": p.url, "identity": identity})
+        return jsonify(results), 200
 
-# --- 5. AI CHAT & LOGS ---
+    @app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_photo(photo_id):
+        user_id = int(get_jwt_identity())
+        photo = Photo.query.filter_by(id=photo_id, user_id=user_id).first()
+        
+        if photo:
+            db.session.delete(photo)
+            db.session.commit()
+            return jsonify({"message": "Deleted"}), 200
+            
+        return jsonify({"message": "Not found"}), 404
 
-@app.route('/api/chat/ask', methods=['POST'])
-def ask_ai():
-    # Activity 4.3: AI Assistant logic (Groq link)
-    query = request.json.get('query', '')
-    # Placeholder for Groq API call logic
-    return jsonify({"response": f"I've analyzed your logs. Found 3 detections of {query}."})
+    @app.route('/api/history', methods=['GET'])
+    @jwt_required()
+    def get_history():
+        user_id = int(get_jwt_identity())
+        logs = db.session.query(DeliveryHistory).join(Photo).filter(Photo.user_id == user_id).order_by(DeliveryHistory.timestamp.desc()).all()
+        return jsonify([{
+            "id": l.id, "type": l.activity_type, "status": l.status, 
+            "time": l.timestamp.strftime("%Y-%m-%d %H:%M")
+        } for l in logs]), 200
+    @app.route('/api/photos/<int:photo_id>/label', methods=['POST'])
+    @jwt_required()
+    def label_photo(photo_id):
+        user_id = int(get_jwt_identity())
+        new_name = request.json.get('name')
 
-@app.route('/api/delivery/history', methods=['GET'])
-def delivery_history():
-    logs = DeliveryLog.query.order_by(DeliveryLog.timestamp.desc()).all()
-    return jsonify([{
-        "id": l.id, "recipient": l.recipient, "type": l.type, 
-        "status": l.status, "timestamp": l.timestamp.isoformat()
-    } for l in logs])
+        if not new_name:
+            return jsonify({"message": "Name is required"}), 400
 
-# Serving Uploaded Files
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        photo = Photo.query.filter_by(id=photo_id, user_id=user_id).first()
+        if not photo:
+            return jsonify({"message": "Photo not found"}), 404
+
+        face = Face.query.filter_by(photo_id=photo.id).first()
+        if not face:
+            return jsonify({"message": "No face detected in this photo."}), 400
+
+        # Check if this person already exists in the database
+        person = Person.query.filter(Person.name.ilike(new_name)).first()
+        if not person:
+            person = Person(name=new_name)
+            db.session.add(person)
+            db.session.flush()
+
+        # Link the face to the person
+        face.person_id = person.id
+        db.session.commit()
+
+        return jsonify({"message": f"Successfully labeled as {new_name}"}), 200
+
+    @app.route('/api/chat', methods=['POST'])
+    @jwt_required()
+    def chat():
+        user_id = int(get_jwt_identity())
+        user_message = request.json.get('message')
+        
+        intent = process_chat_query(user_message)
+        
+        if intent.get("action") == "send_via_gmail":
+            target_name = intent.get("name")
+            target_email = intent.get("email")
+            
+            if not target_name or not target_email:
+                return jsonify({"reply": "I couldn't find a valid name or email address in your request."}), 200
+                
+            person = Person.query.filter(Person.name.ilike(f"%{target_name}%")).first()
+            if not person:
+                return jsonify({"reply": f"I couldn't find anyone named {target_name} in your database."}), 200
+                
+            faces = Face.query.filter_by(person_id=person.id).all()
+            photo_ids = [face.photo_id for face in faces]
+            photos = Photo.query.filter(Photo.id.in_(photo_ids), Photo.user_id==user_id).all()
+            
+            if not photos:
+                return jsonify({"reply": f"You don't have any photos of {target_name}."}), 200
+                
+            photo_paths = [os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(p.url)) for p in photos]
+            
+            success, msg = send_photo_via_gmail(target_email, photo_paths)
+            
+            if success:
+                db.session.add(DeliveryHistory(activity_type=f"Sent {len(photos)} photos of {target_name} to {target_email} via Gmail Services", photo_id=photos[0].id))
+                db.session.commit()
+                return jsonify({"reply": f"[SUCCESS] Sent {len(photos)} photos of {target_name} to {target_email} via Gmail services!"}), 200
+            else:
+                return jsonify({"reply": f"Failed to connect to Gmail services: {msg}"}), 200
+
+        return jsonify({"reply": intent.get("message", "I didn't quite catch that.")}), 200
+
+    with app.app_context():
+        db.create_all()
+    return app
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    app = create_app()
+    app.run(debug=True, port=5000)

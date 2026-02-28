@@ -1,82 +1,45 @@
+import smtplib
+from email.message import EmailMessage
 import os
-import base64
-import pickle
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
-from models import db, DeliveryHistory
+from dotenv import load_dotenv
 
-# Define scopes for Gmail API
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+# 1. BULLETPROOF ENV LOADER: Force Python to find the .env file in the backend directory
+basedir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+env_path = os.path.join(basedir, '.env')
+load_dotenv(env_path)
 
-class GmailService:
-    """Gmail API service for sending emails with attachments"""
+def send_photo_via_gmail(to_email, photo_paths):
+    """
+    Activity 3.3: Implements Delivery using Gmail Services and SMTP.
+    """
+    # 2. BULLETPROOF VARIABLES: Check for both name variations just to be safe
+    sender_email = os.getenv("GMAIL_USER") or os.getenv("GMAIL_EMAIL")
+    sender_password = os.getenv("GMAIL_PASS") or os.getenv("GMAIL_PASSWORD")
 
-    def __init__(self, credentials_path='credentials.json'):
-        self.credentials_path = credentials_path
-        self.service = self._get_service()
+    if not sender_email or not sender_password:
+        return False, "Gmail services credentials not configured on server. Check if your file is named exactly '.env'."
 
-    def _get_service(self):
-        """Authenticate and return Gmail service"""
-        creds = None
-        token_path = 'token.pickle'
-        
-        # Load token if exists
-        if os.path.exists(token_path):
-            with open(token_path, 'rb') as token:
-                creds = pickle.load(token)
-        
-        # If no valid credentials, authenticate
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(self.credentials_path):
-                    print("Error: credentials.json not found.")
-                    return None
-                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
-                creds = flow.run_local_server(port=0)
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = 'Your Photos from Drishyamitra'
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg.set_content("Here are the photos you requested via Drishyamitra's Gmail services!")
+
+        # Attach each photo
+        for path in photo_paths:
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    img_data = f.read()
+                    file_name = os.path.basename(path)
+                    msg.add_attachment(img_data, maintype='image', subtype='jpeg', filename=file_name)
+
+        # Connect to Gmail SMTP server
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender_email, sender_password)
+            smtp.send_message(msg)
             
-            # Save credentials
-            with open(token_path, 'wb') as token:
-                pickle.dump(creds, token)
-        
-        return build('gmail', 'v1', credentials=creds) if creds else None
-
-    def send_photo_email(self, recipient_email, photo_path, photo_id):
-        """Composes and sends email with attachments"""
-        if not self.service:
-            return {"status": "error", "message": "Gmail Service not initialized."}
-
-        try:
-            # Create the message container
-            message = MIMEMultipart()
-            message['to'] = recipient_email
-            message['subject'] = "Drishyamitra: Shared Photo Attached"
-            
-            body = "Hello! Here is the photo you requested from your Drishyamitra management system."
-            message.attach(MIMEText(body, 'plain'))
-
-            # Fetch and attach image from storage
-            with open(photo_path, 'rb') as f:
-                img_data = f.read()
-                image = MIMEImage(img_data, name=os.path.basename(photo_path))
-                message.attach(image)
-
-            # Encode and send
-            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-            self.service.users().messages().send(userId="me", body={'raw': raw_message}).execute()
-
-            # Log to DeliveryHistory model
-            new_log = DeliveryHistory(photo_id=photo_id, recipient=recipient_email, delivery_type='Email', status='Sent')
-            db.session.add(new_log)
-            db.session.commit()
-
-            return {"status": "success", "message": "Email sent successfully."}
-
-        except Exception as e:
-            # Error handling for invalid recipients or quota
-            return {"status": "error", "message": f"Failed to send: {str(e)}"}
+        return True, "Sent successfully via Gmail services!"
+    except Exception as e:
+        print(f"Gmail SMTP Error: {e}")
+        return False, str(e)

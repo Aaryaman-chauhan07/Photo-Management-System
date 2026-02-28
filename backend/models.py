@@ -1,35 +1,44 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import uuid
 
 db = SQLAlchemy()
 
-# Fixes the 'ImportError: cannot import name User'
 class User(db.Model):
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False) # Store hashed passwords
+    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    password = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    photos = db.relationship('Photo', backref='owner', lazy=True, cascade="all, delete-orphan")
+
+class Person(db.Model):
+    __tablename__ = 'persons'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    faces = db.relationship('Face', backref='person_identity', lazy=True)
 
 class Photo(db.Model):
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    filename = db.Column(db.String(255), nullable=False)
-    filepath = db.Column(db.String(255), nullable=False)
-    identity = db.Column(db.String(100), default='Unknown')
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    __tablename__ = 'photos'
+    id = db.Column(db.Integer, primary_key=True)
+    url = db.Column(db.String(500), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    faces = db.relationship('Face', backref='source_photo', lazy=True, cascade="all, delete-orphan")
+    deliveries = db.relationship('DeliveryHistory', backref='photo', lazy=True, cascade="all, delete-orphan")
 
 class Face(db.Model):
+    __tablename__ = 'faces'
     id = db.Column(db.Integer, primary_key=True)
-    photo_id = db.Column(db.String(36), db.ForeignKey('photo.id'), nullable=False)
-    bounding_box = db.Column(db.Text, nullable=False)
+    embedding = db.Column(db.JSON, nullable=True) 
+    photo_id = db.Column(db.Integer, db.ForeignKey('photos.id'), nullable=True)
+    person_id = db.Column(db.Integer, db.ForeignKey('persons.id'), nullable=True)
 
-class Identity(db.Model):
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class DeliveryLog(db.Model):
+class DeliveryHistory(db.Model):
+    __tablename__ = 'delivery_history'
     id = db.Column(db.Integer, primary_key=True)
-    recipient = db.Column(db.String(255), nullable=False)
-    method = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(50), default='Pending')
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    activity_type = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(20), default='SUCCESS')
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    photo_id = db.Column(db.Integer, db.ForeignKey('photos.id'), nullable=False)
