@@ -1,39 +1,57 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 const express = require('express');
-const app = express();
+const cors = require('cors');
+require('dotenv').config(); 
+const twilio = require('twilio');
 
+const app = express();
+app.use(cors());
 app.use(express.json());
 
-// Initialize WhatsApp Client with Local Authentication
-const client = new Client({
-    authStrategy: new LocalAuth()
-});
+// Load Twilio credentials from your .env file
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER;
 
-// Generate QR Code for login
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-    console.log('Scan the QR code above with your WhatsApp to log in.');
-});
+let client;
+if (accountSid && authToken) {
+    client = twilio(accountSid, authToken);
+}
 
-client.on('ready', () => {
-    console.log('WhatsApp Bridge is Ready!');
-});
+app.post('/api/whatsapp', async (req, res) => {
+    console.log("\n📥 --- NEW REQUEST FROM PYTHON AI ---");
+    
+    // 1. Remove ALL spaces from the phone number automatically
+    const rawPhone = req.body.phone || "";
+    const cleanPhone = rawPhone.replace(/\s+/g, ''); 
+    const { message, mediaUrl } = req.body;
 
-// Activity 3.4: Endpoint for Flask to trigger messages
-app.post('/send-alert', async (req, res) => {
-    const { phone, message } = req.body;
+    console.log(`Sending to: whatsapp:${cleanPhone}`);
+
+    if (!cleanPhone) {
+        return res.status(400).send("Missing phone number");
+    }
+
     try {
-        const chatId = phone.includes('@c.us') ? phone : `${phone}@c.us`;
-        await client.sendMessage(chatId, message);
-        res.status(200).json({ status: 'Success', message: 'WhatsApp alert sent' });
+        if (client) {
+            const twilioRes = await client.messages.create({
+                body: message,
+                from: twilioWhatsAppNumber,
+                to: `whatsapp:${cleanPhone}` // Uses the cleaned number
+            });
+            console.log("✅ Message sent via Twilio! SID:", twilioRes.sid);
+            res.status(200).send("Success");
+        } else {
+            console.log(`⚠️ TWILIO KEYS NOT FOUND.`);
+            res.status(200).send("Mock Success");
+        }
     } catch (error) {
-        res.status(500).json({ status: 'Error', error: error.message });
+        // This stops the 500 error from crashing your bridge
+        console.error("❌ Twilio Error:", error.message);
+        res.status(400).json({ error: error.message });
     }
 });
 
-app.listen(6000, () => {
-    console.log('Bridge API listening on port 6000');
+const PORT = process.env.PORT || 6000;
+app.listen(PORT, () => {
+    console.log(`🚀 Bridge API listening on port ${PORT}`);
 });
-
-client.initialize();
