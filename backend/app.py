@@ -2,7 +2,9 @@ import os
 import requests
 from dotenv import load_dotenv
 
+# Load environment variables from .env
 load_dotenv()
+
 from flask import Flask, request, jsonify, send_from_directory
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -17,6 +19,7 @@ from services.gmail_service import send_photo_via_gmail
 
 def create_app():
     app = Flask(__name__)
+    
     # Activity 4.1: Support credentials for React frontend communication
     CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
@@ -24,9 +27,12 @@ def create_app():
     basedir = os.path.abspath(os.path.dirname(__file__))
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'drishyamitra.db')
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'ibm-secret-2026')
-    app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'data/photos')
+    app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'data', 'photos')
+    
+    # Ensure the upload directory exists
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+    # Initialize extensions
     db.init_app(app)
     bcrypt = Bcrypt(app)
     jwt = JWTManager(app)
@@ -104,6 +110,22 @@ def create_app():
             results.append({"id": p.id, "url": p.url, "identity": identity})
         return jsonify(results), 200
 
+    @app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_photo(photo_id):
+        # FIX: Cleanup related records first to avoid Foreign Key errors
+        user_id = int(get_jwt_identity())
+        photo = Photo.query.filter_by(id=photo_id, user_id=user_id).first()
+        
+        if photo:
+            Face.query.filter_by(photo_id=photo_id).delete()
+            DeliveryHistory.query.filter_by(photo_id=photo_id).delete()
+            db.session.delete(photo)
+            db.session.commit()
+            return jsonify({"message": "Deleted"}), 200
+                
+        return jsonify({"message": "Not found"}), 404
+
     @app.route('/api/history', methods=['GET'])
     @jwt_required()
     def get_history():
@@ -114,6 +136,37 @@ def create_app():
             "id": l.id, "type": l.activity_type, "status": l.status, 
             "time": l.timestamp.strftime("%Y-%m-%d %H:%M")
         } for l in logs]), 200
+
+    @app.route('/api/photos/<int:photo_id>/label', methods=['POST'])
+    @jwt_required()
+    def label_photo(photo_id):
+        # FIX: Ensure Face record exists before labeling
+        user_id = int(get_jwt_identity())
+        new_name = request.json.get('name')
+
+        if not new_name:
+            return jsonify({"message": "Name is required"}), 400
+
+        photo = Photo.query.filter_by(id=photo_id, user_id=user_id).first()
+        if not photo:
+            return jsonify({"message": "Photo not found"}), 404
+
+        face = Face.query.filter_by(photo_id=photo.id).first()
+        if not face:
+            # Create a missing face record if necessary
+            face = Face(photo_id=photo.id)
+            db.session.add(face)
+            db.session.flush()
+
+        person = Person.query.filter(Person.name.ilike(new_name)).first()
+        if not person:
+            person = Person(name=new_name)
+            db.session.add(person)
+            db.session.flush()
+
+        face.person_id = person.id
+        db.session.commit()
+        return jsonify({"message": f"Successfully labeled as {new_name}"}), 200
 
     @app.route('/api/chat', methods=['POST'])
     @jwt_required()
@@ -131,21 +184,19 @@ def create_app():
             target_phone = intent.get("phone")
             
             if not target_name or not target_phone:
-                return jsonify({"reply": "I need both a name and a phone number for WhatsApp."}), 200
+                return jsonify({"reply": "I need both a name and a phone number."}), 200
             
-            # Auto-clean phone number to prevent Twilio errors
             clean_phone = "".join(filter(lambda x: x.isdigit() or x == '+', target_phone)).replace(" ", "")
-                
             person = Person.query.filter(Person.name.ilike(f"%{target_name}%")).first()
+            
             if not person:
-                return jsonify({"reply": f"No one named {target_name} found in your database."}), 200
+                return jsonify({"reply": f"No one named {target_name} found."}), 200
                 
             photo = Photo.query.join(Face).filter(Face.person_id == person.id, Photo.user_id == user_id).first()
             if not photo:
-                return jsonify({"reply": f"No photos of {target_name} found to send."}), 200
+                return jsonify({"reply": f"No photos of {target_name} found."}), 200
 
-            # --- THE KEY FIX: Use the Public Ngrok URL for Twilio ---
-            # rstrip ensures no double slashes like //data/photos
+            # CRITICAL: Use the Public Ngrok URL for Twilio
             public_url = os.getenv("PUBLIC_URL", "http://localhost:5000").rstrip('/')
             full_media_url = f"{public_url}/{photo.url}"
 
@@ -162,9 +213,7 @@ def create_app():
                     db.session.add(DeliveryHistory(activity_type=f"WhatsApp sent to {clean_phone}", photo_id=photo.id))
                     db.session.commit()
                     return jsonify({"reply": f"[SUCCESS] Forwarded to WhatsApp Bridge for {target_name}!"}), 200
-                else:
-                    return jsonify({"reply": f"WhatsApp Bridge Error: Code {response.status_code}"}), 200
-            except requests.exceptions.RequestException:
+            except:
                 return jsonify({"reply": "WhatsApp Bridge Error: Could not reach port 6000."}), 200
 
         # Activity 3.3: Gmail Integration
@@ -172,9 +221,6 @@ def create_app():
             target_name = intent.get("name")
             target_email = intent.get("email")
             
-            if not target_name or not target_email:
-                return jsonify({"reply": "I couldn't find a valid name or email address."}), 200
-                
             person = Person.query.filter(Person.name.ilike(f"%{target_name}%")).first()
             if person:
                 faces = Face.query.filter_by(person_id=person.id).all()
@@ -182,6 +228,7 @@ def create_app():
                 photos = Photo.query.filter(Photo.id.in_(photo_ids), Photo.user_id==user_id).all()
                 
                 if photos:
+                    # FIX: Use absolute paths for Gmail attachments
                     photo_paths = [os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(p.url)) for p in photos]
                     success, msg = send_photo_via_gmail(target_email, photo_paths)
                     
